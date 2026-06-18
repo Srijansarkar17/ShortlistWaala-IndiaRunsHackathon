@@ -31,6 +31,7 @@ import sys
 import time
 from pathlib import Path
 
+import pandas as pd
 from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -38,12 +39,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 from src.ingestion import CandidateLoader, CandidateNormalizer, ParquetExporter
 from src.validation import HoneypotDetector, HoneypotExporter
 from src.feature_engineering.store import FeatureStore
-from src.jd_understanding.parser import JDParser
+from src.jd_understanding.parser import JDParser, JDProfile
+from src.retrieval.engine import HybridRetriever
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="RedRob Ranker — Phases 1, 2, 3, & 4")
-    p.add_argument("--phase", default="all", choices=["1", "2", "3", "4", "all"],
+    p = argparse.ArgumentParser(description="RedRob Ranker — Phases 1, 2, 3, 4, & 5")
+    p.add_argument("--phase", default="all", choices=["1", "2", "3", "4", "5", "all"],
                    help="Which phase(s) to run (default: all)")
     p.add_argument("--input", default="data/candidates.jsonl",
                    help="Path to candidates.jsonl")
@@ -57,6 +59,12 @@ def parse_args() -> argparse.Namespace:
                    help="Phase 4 Job Description text path")
     p.add_argument("--jd-output", default="artifacts/jd_profile.json",
                    help="Phase 4 JSON output path")
+    p.add_argument("--candidates-parquet", default="artifacts/candidates.parquet",
+                   help="Candidates Parquet database path")
+    p.add_argument("--retrieval-output", default="artifacts/retrieval_results.parquet",
+                   help="Phase 5 Retrieval results Parquet output path")
+    p.add_argument("--embeddings-cache-dir", default="artifacts/embeddings_cache",
+                   help="Directory for caching candidate dense embeddings")
     p.add_argument("--chunk-size", type=int, default=10_000,
                    help="Rows per write chunk")
     p.add_argument("--honeypot-threshold", type=float, default=0.6,
@@ -200,6 +208,54 @@ def run_phase4(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Phase 5
+# ---------------------------------------------------------------------------
+
+def run_phase5(args: argparse.Namespace) -> None:
+    t0 = time.perf_counter()
+    logger.info("=" * 60)
+    logger.info("Phase 5: Hybrid Retrieval")
+    logger.info("=" * 60)
+
+    logger.info(f"[1/4] Loading JD Profile from: {args.jd_output}")
+    jd_profile_path = Path(args.jd_output)
+    if not jd_profile_path.exists():
+        logger.error(f"JD Profile JSON not found at: {jd_profile_path}. Please run Phase 4 first.")
+        sys.exit(1)
+        
+    with open(jd_profile_path, "r", encoding="utf-8") as fh:
+        jd_profile = JDProfile.model_validate_json(fh.read())
+
+    logger.info(f"[2/4] Loading candidates database from: {args.candidates_parquet}")
+    candidates_path = Path(args.candidates_parquet)
+    if not candidates_path.exists():
+        logger.error(f"Candidates database Parquet not found at: {candidates_path}. Please run Phase 1 first.")
+        sys.exit(1)
+        
+    candidates_df = pd.read_parquet(candidates_path)
+    logger.info(f"Loaded {len(candidates_df):,} candidate profiles")
+
+    logger.info("[3/4] Running retrieval pipeline...")
+    retriever = HybridRetriever()
+    results_df = retriever.retrieve(
+        jd_profile=jd_profile,
+        candidates_df=candidates_df,
+        top_n=5000,
+        embeddings_cache_dir=args.embeddings_cache_dir
+    )
+
+    logger.info(f"[4/4] Saving top 5,000 results to: {args.retrieval_output}")
+    out_path = Path(args.retrieval_output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    results_df.to_parquet(out_path, index=False)
+
+    elapsed = time.perf_counter() - t0
+    logger.info("-" * 60)
+    logger.info(f"Hybrid retrieval finished successfully")
+    logger.info(f"Output: {out_path} | Candidates retrieved: {len(results_df):,} | Time: {elapsed:.1f}s")
+
+
+# ---------------------------------------------------------------------------
 # Entry
 # ---------------------------------------------------------------------------
 
@@ -217,6 +273,9 @@ def main() -> None:
 
     if args.phase in ("4", "all"):
         run_phase4(args)
+
+    if args.phase in ("5", "all"):
+        run_phase5(args)
 
 
 if __name__ == "__main__":

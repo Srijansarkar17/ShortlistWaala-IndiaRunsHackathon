@@ -2,6 +2,9 @@
 *.parquet
 *.jsonl
 *.json
+*.npy
+redrob-ranker/artifacts/embeddings_cache/
+
 
 # ── Python ───────────────────────────────────────────────────────
 __pycache__/
