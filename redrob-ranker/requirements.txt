@@ -1,0 +1,12 @@
+# Core data
+pydantic>=2.7.0
+pandas>=2.2.0
+pyarrow>=16.0.0
+
+# Progress & logging
+tqdm>=4.66.0
+loguru>=0.7.2
+
+# Testing
+pytest>=8.2.0
+pytest-cov>=5.0.0
