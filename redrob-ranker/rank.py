@@ -38,11 +38,12 @@ sys.path.insert(0, str(Path(__file__).parent))
 from src.ingestion import CandidateLoader, CandidateNormalizer, ParquetExporter
 from src.validation import HoneypotDetector, HoneypotExporter
 from src.feature_engineering.store import FeatureStore
+from src.jd_understanding.parser import JDParser
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="RedRob Ranker — Phases 1, 2, & 3")
-    p.add_argument("--phase", default="all", choices=["1", "2", "3", "all"],
+    p = argparse.ArgumentParser(description="RedRob Ranker — Phases 1, 2, 3, & 4")
+    p.add_argument("--phase", default="all", choices=["1", "2", "3", "4", "all"],
                    help="Which phase(s) to run (default: all)")
     p.add_argument("--input", default="data/candidates.jsonl",
                    help="Path to candidates.jsonl")
@@ -52,6 +53,10 @@ def parse_args() -> argparse.Namespace:
                    help="Phase 2 Parquet output path")
     p.add_argument("--features-output", default="artifacts/features.parquet",
                    help="Phase 3 Parquet output path")
+    p.add_argument("--jd-input", default="job_description.txt",
+                   help="Phase 4 Job Description text path")
+    p.add_argument("--jd-output", default="artifacts/jd_profile.json",
+                   help="Phase 4 JSON output path")
     p.add_argument("--chunk-size", type=int, default=10_000,
                    help="Rows per write chunk")
     p.add_argument("--honeypot-threshold", type=float, default=0.6,
@@ -159,6 +164,42 @@ def run_phase3(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Phase 4
+# ---------------------------------------------------------------------------
+
+def run_phase4(args: argparse.Namespace) -> None:
+    t0 = time.perf_counter()
+    logger.info("=" * 60)
+    logger.info("Phase 4: Job Description Understanding")
+    logger.info("=" * 60)
+
+    logger.info(f"[1/3] Reading job description from: {args.jd_input}")
+    jd_path = Path(args.jd_input)
+    if not jd_path.exists():
+        logger.error(f"Job Description file not found at: {jd_path}")
+        sys.exit(1)
+
+    with open(jd_path, "r", encoding="utf-8") as fh:
+        jd_text = fh.read()
+
+    logger.info("[2/3] Extracting metadata locally...")
+    parser = JDParser()
+    profile = parser.parse(jd_text)
+
+    logger.info(f"[3/3] Exporting to: {args.jd_output}")
+    out_path = Path(args.jd_output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as fh:
+        # Pydantic v2 format dump
+        fh.write(profile.model_dump_json(indent=2))
+
+    elapsed = time.perf_counter() - t0
+    logger.info("-" * 60)
+    logger.info(f"Job Description parsed successfully")
+    logger.info(f"Output: {out_path} | Time: {elapsed:.3f}s")
+
+
+# ---------------------------------------------------------------------------
 # Entry
 # ---------------------------------------------------------------------------
 
@@ -173,6 +214,9 @@ def main() -> None:
 
     if args.phase in ("3", "all"):
         run_phase3(args)
+
+    if args.phase in ("4", "all"):
+        run_phase4(args)
 
 
 if __name__ == "__main__":

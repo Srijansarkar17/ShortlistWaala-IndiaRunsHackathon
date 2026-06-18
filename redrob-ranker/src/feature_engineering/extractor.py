@@ -1,3 +1,5 @@
+from datetime import date
+import json
 from typing import Any
 
 from src.ingestion.models import Candidate
@@ -61,10 +63,56 @@ class FeatureExtractor:
         features["startup_ratio"] = startup_jobs / num_jobs if num_jobs > 0 else 0.0
         
         # 3. Behavior Features (Redrob signals)
-        signals = candidate.redrob_signals.model_dump(exclude_none=True)
-        for k, v in signals.items():
-            if isinstance(v, (int, float, bool, str)): # Keep simple scalar features
-                features[f"signal_{k}"] = v
+        signals = candidate.redrob_signals
+        
+        features["signal_profile_completeness_score"] = signals.profile_completeness_score
+        features["signal_signup_date"] = str(signals.signup_date) if signals.signup_date else None
+        features["signal_last_active_date"] = str(signals.last_active_date) if signals.last_active_date else None
+        features["signal_open_to_work_flag"] = signals.open_to_work_flag
+        features["signal_profile_views_received_30d"] = signals.profile_views_received_30d
+        features["signal_applications_submitted_30d"] = signals.applications_submitted_30d
+        features["signal_recruiter_response_rate"] = signals.recruiter_response_rate
+        features["signal_avg_response_time_hours"] = signals.avg_response_time_hours
+        
+        # skill_assessment_scores (JSON string for nested compatibility, plus aggregates)
+        features["signal_skill_assessment_scores_json"] = json.dumps(signals.skill_assessment_scores or {})
+        
+        # Aggregates for skill assessments
+        features["signal_num_skill_assessments"] = len(signals.skill_assessment_scores) if signals.skill_assessment_scores else 0
+        if signals.skill_assessment_scores:
+            scores = [float(s) for s in signals.skill_assessment_scores.values() if s is not None]
+            if scores:
+                features["signal_avg_skill_assessment_score"] = sum(scores) / len(scores)
+                features["signal_max_skill_assessment_score"] = max(scores)
+                features["signal_min_skill_assessment_score"] = min(scores)
+            else:
+                features["signal_avg_skill_assessment_score"] = None
+                features["signal_max_skill_assessment_score"] = None
+                features["signal_min_skill_assessment_score"] = None
+        else:
+            features["signal_avg_skill_assessment_score"] = None
+            features["signal_max_skill_assessment_score"] = None
+            features["signal_min_skill_assessment_score"] = None
+
+        features["signal_connection_count"] = signals.connection_count
+        features["signal_endorsements_received"] = signals.endorsements_received
+        features["signal_notice_period_days"] = signals.notice_period_days
+        
+        # expected_salary_range_inr_lpa (flatten min and max)
+        sal = signals.expected_salary_range_inr_lpa
+        features["signal_expected_salary_min"] = sal.get("min") if sal else None
+        features["signal_expected_salary_max"] = sal.get("max") if sal else None
+        
+        features["signal_preferred_work_mode"] = signals.preferred_work_mode
+        features["signal_willing_to_relocate"] = signals.willing_to_relocate
+        features["signal_github_activity_score"] = signals.github_activity_score
+        features["signal_search_appearance_30d"] = signals.search_appearance_30d
+        features["signal_saved_by_recruiters_30d"] = signals.saved_by_recruiters_30d
+        features["signal_interview_completion_rate"] = signals.interview_completion_rate
+        features["signal_offer_acceptance_rate"] = signals.offer_acceptance_rate
+        features["signal_verified_email"] = signals.verified_email
+        features["signal_verified_phone"] = signals.verified_phone
+        features["signal_linkedin_connected"] = signals.linkedin_connected
                 
         # 4. Location Features
         features["location"] = candidate.profile.location or ""
@@ -74,3 +122,5 @@ class FeatureExtractor:
         features["notice_period_days"] = candidate.redrob_signals.notice_period_days or 0
         
         return features
+
+

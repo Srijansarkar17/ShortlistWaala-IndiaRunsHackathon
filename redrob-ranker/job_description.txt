@@ -1,0 +1,22 @@
+Job Description: Senior Machine Learning Engineer
+
+Company Overview:
+We are a leading SaaS provider in the FinTech space, building cutting-edge vector search and semantic search solutions.
+
+Key Responsibilities:
+- Design, build, and deploy NLP models using PyTorch.
+- Collaborate with frontend and backend developers on system integrations.
+- Show strong leadership and mentorship to junior engineering staff.
+
+Location & Work Mode:
+- Hybrid model based out of our office in Bengaluru, India.
+
+Qualifications & Requirements:
+- At least 3 to 6 years of experience working as a Machine Learning Engineer or Data Scientist.
+- Must have strong programming skills in Python and database query experience with SQL.
+- Deep expertise in PyTorch and transformers.
+- Strong soft skills: outstanding communication and teamwork.
+
+Nice to Have / Preferred Qualifications:
+- Experience with Kubernetes and Docker containers.
+- Hands-on experience with LLM orchestration frameworks like LangChain and LlamaIndex.
