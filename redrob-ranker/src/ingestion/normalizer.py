@@ -34,6 +34,7 @@ class NormalizedCandidate:
 
     # Identity
     candidate_id: str
+    anonymized_name: str
 
     # Normalised free-text document (used for embedding / BM25)
     normalized_text: str
@@ -116,6 +117,7 @@ class CandidateNormalizer:
 
         return NormalizedCandidate(
             candidate_id=candidate.candidate_id,
+            anonymized_name=self._clean(profile.anonymized_name),
             normalized_text=normalized_text,
             # profile scalars
             headline=headline_text,

@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -37,15 +38,16 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.ingestion import CandidateLoader, CandidateNormalizer, ParquetExporter
-from src.validation import HoneypotDetector, HoneypotExporter
-from src.feature_engineering.store import FeatureStore
+from src.validation import HoneypotDetector, HoneypotExporter, TrapDetector, TwinResolver
+from src.feature_engineering import FeatureStore, JDFeatureGenerator
 from src.jd_understanding.parser import JDParser, JDProfile
 from src.retrieval.engine import HybridRetriever
+from src.ranking import RankingEngine, CrossEncoderReranker
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="RedRob Ranker — Phases 1, 2, 3, 4, & 5")
-    p.add_argument("--phase", default="all", choices=["1", "2", "3", "4", "5", "all"],
+    p = argparse.ArgumentParser(description="RedRob Ranker — Phases 1, 2, 3, 4, 5, 6, 7, 8, 9 & 10")
+    p.add_argument("--phase", default="all", choices=["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "all"],
                    help="Which phase(s) to run (default: all)")
     p.add_argument("--input", default="data/candidates.jsonl",
                    help="Path to candidates.jsonl")
@@ -63,6 +65,28 @@ def parse_args() -> argparse.Namespace:
                    help="Candidates Parquet database path")
     p.add_argument("--retrieval-output", default="artifacts/retrieval_results.parquet",
                    help="Phase 5 Retrieval results Parquet output path")
+    p.add_argument("--jd-features-output", default="artifacts/jd_features.parquet",
+                   help="Phase 6 JD Features Parquet output path")
+    p.add_argument("--trap-output", default="artifacts/trap_features.parquet",
+                   help="Phase 7 Trap Features Parquet output path")
+    p.add_argument("--twin-output", default="artifacts/twin_features.parquet",
+                   help="Phase 8 Twin Features Parquet output path")
+    p.add_argument("--ranking-output", default="artifacts/ranked_candidates.parquet",
+                   help="Phase 9 Ranked candidates Parquet output path")
+    p.add_argument("--ranking-model-path", default="artifacts/models/lambdarank.txt",
+                   help="Phase 9 saved model output path")
+    p.add_argument("--rerank-output", default="artifacts/reranked_candidates.parquet",
+                   help="Phase 10 Reranked candidates Parquet output path")
+    p.add_argument("--rerank-cache-path", default="artifacts/cross_encoder_cache.json",
+                   help="Phase 10 Cross-Encoder cache JSON path")
+    p.add_argument("--rerank-batch-size", type=int, default=32,
+                   help="Phase 10 Cross-Encoder inference batch size")
+    p.add_argument("--train-only", action="store_true",
+                   help="Only run ranking model training, do not output ranking predictions")
+    p.add_argument("--rank-only", action="store_true",
+                   help="Only run ranking model inference using saved model, do not retrain")
+    p.add_argument("--filter-honeypots", action="store_true",
+                   help="Filter out flagged honeypots in Phase 6")
     p.add_argument("--embeddings-cache-dir", default="artifacts/embeddings_cache",
                    help="Directory for caching candidate dense embeddings")
     p.add_argument("--chunk-size", type=int, default=10_000,
@@ -256,6 +280,121 @@ def run_phase5(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Phase 6
+# ---------------------------------------------------------------------------
+
+def run_phase6(args: argparse.Namespace) -> None:
+    t0 = time.perf_counter()
+    logger.info("=" * 60)
+    logger.info("Phase 6: JD Feature Generator")
+    logger.info("=" * 60)
+
+    # 1. Load JD Profile
+    logger.info(f"[1/5] Loading JD Profile from: {args.jd_output}")
+    jd_profile_path = Path(args.jd_output)
+    if not jd_profile_path.exists():
+        logger.error(f"JD Profile JSON not found at: {jd_profile_path}. Please run Phase 4 first.")
+        sys.exit(1)
+        
+    with open(jd_profile_path, "r", encoding="utf-8") as fh:
+        jd_profile = JDProfile.model_validate_json(fh.read())
+
+    # 2. Check Candidate parquet
+    logger.info(f"[2/5] Checking Candidates database: {args.candidates_parquet}")
+    candidates_path = Path(args.candidates_parquet)
+    if not candidates_path.exists():
+        logger.error(f"Candidates database Parquet not found at: {candidates_path}. Please run Phase 1 first.")
+        sys.exit(1)
+
+    # 3. Check precomputed Features
+    logger.info(f"[3/5] Checking Candidate Features: {args.features_output}")
+    features_path = Path(args.features_output)
+    if not features_path.exists():
+        logger.error(f"Candidate Features Parquet not found at: {features_path}. Please run Phase 3 first.")
+        sys.exit(1)
+
+    # 4. Check Honeypots
+    logger.info(f"[4/5] Checking Honeypots database: {args.honeypot_output}")
+    honeypot_path = Path(args.honeypot_output)
+    if not honeypot_path.exists():
+        logger.error(f"Honeypots database Parquet not found at: {honeypot_path}. Please run Phase 2 first.")
+        sys.exit(1)
+
+    # 5. Check Retrieval Results
+    logger.info(f"[5/5] Checking Retrieval Results: {args.retrieval_output}")
+    retrieval_path = Path(args.retrieval_output)
+    if not retrieval_path.exists():
+        logger.error(f"Retrieval results Parquet not found at: {retrieval_path}. Please run Phase 5 first.")
+        sys.exit(1)
+
+    logger.info("Generating JD features matrix...")
+    generator = JDFeatureGenerator()
+    features_df = generator.generate(
+        jd_profile=jd_profile,
+        candidates_parquet=candidates_path,
+        features_parquet=features_path,
+        honeypots_parquet=honeypot_path,
+        retrieval_parquet=retrieval_path,
+        filter_honeypots=args.filter_honeypots
+    )
+
+    out_path = Path(args.jd_features_output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    features_df.to_parquet(out_path, index=False)
+
+    elapsed = time.perf_counter() - t0
+    logger.info("-" * 60)
+    logger.info(f"JD features generated successfully")
+    logger.info(f"Output: {out_path} | Candidates featured: {len(features_df):,} | Time: {elapsed:.1f}s")
+
+
+# ---------------------------------------------------------------------------
+# Phase 7
+# ---------------------------------------------------------------------------
+
+def run_phase7(args: argparse.Namespace) -> None:
+    t0 = time.perf_counter()
+    logger.info("=" * 60)
+    logger.info("Phase 7: Trap Detection")
+    logger.info("=" * 60)
+
+    # 1. Check Candidate parquet
+    logger.info(f"[1/3] Checking Candidates database: {args.candidates_parquet}")
+    candidates_path = Path(args.candidates_parquet)
+    if not candidates_path.exists():
+        logger.error(f"Candidates database Parquet not found at: {candidates_path}. Please run Phase 1 first.")
+        sys.exit(1)
+
+    # 2. Check precomputed Features
+    logger.info(f"[2/3] Checking Candidate Features: {args.features_output}")
+    features_path = Path(args.features_output)
+    if not features_path.exists():
+        logger.error(f"Candidate Features Parquet not found at: {features_path}. Please run Phase 3 first.")
+        sys.exit(1)
+
+    logger.info("[3/3] Running trap detection engine...")
+    detector = TrapDetector()
+    
+    # Use current datetime as reference date
+    ref_date = datetime(2026, 6, 21)
+    
+    trap_df = detector.detect(
+        candidates_parquet=candidates_path,
+        features_parquet=features_path,
+        reference_date=ref_date
+    )
+
+    out_path = Path(args.trap_output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    trap_df.to_parquet(out_path, index=False)
+
+    elapsed = time.perf_counter() - t0
+    logger.info("-" * 60)
+    logger.info(f"Trap features generated successfully")
+    logger.info(f"Output: {out_path} | Candidates processed: {len(trap_df):,} | Time: {elapsed:.1f}s")
+
+
+# ---------------------------------------------------------------------------
 # Entry
 # ---------------------------------------------------------------------------
 
@@ -277,6 +416,176 @@ def main() -> None:
     if args.phase in ("5", "all"):
         run_phase5(args)
 
+    if args.phase in ("6", "all"):
+        run_phase6(args)
+
+    if args.phase in ("7", "all"):
+        run_phase7(args)
+
+    if args.phase in ("8", "all"):
+        run_phase8(args)
+
+    if args.phase in ("9", "all"):
+        run_phase9(args)
+
+    if args.phase in ("10", "all"):
+        run_phase10(args)
+
+
+# ---------------------------------------------------------------------------
+# Phase 8
+# ---------------------------------------------------------------------------
+
+def run_phase8(args: argparse.Namespace) -> None:
+    t0 = time.perf_counter()
+    logger.info("=" * 60)
+    logger.info("Phase 8: Twin Resolver")
+    logger.info("=" * 60)
+
+    # 1. Check Candidate parquet
+    logger.info(f"[1/3] Checking Candidates database: {args.candidates_parquet}")
+    candidates_path = Path(args.candidates_parquet)
+    if not candidates_path.exists():
+        logger.error(f"Candidates database Parquet not found at: {candidates_path}. Please run Phase 1 first.")
+        sys.exit(1)
+
+    # 2. Check precomputed Features
+    logger.info(f"[2/3] Checking Candidate Features: {args.features_output}")
+    features_path = Path(args.features_output)
+    if not features_path.exists():
+        logger.error(f"Candidate Features Parquet not found at: {features_path}. Please run Phase 3 first.")
+        sys.exit(1)
+
+    logger.info("[3/3] Running twin resolver engine...")
+    resolver = TwinResolver()
+    
+    # Use reference date
+    ref_date = datetime(2026, 6, 21)
+    
+    twin_df = resolver.resolve(
+        candidates_parquet=candidates_path,
+        features_parquet=features_path,
+        reference_date=ref_date
+    )
+
+    out_path = Path(args.twin_output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    twin_df.to_parquet(out_path, index=False)
+
+    elapsed = time.perf_counter() - t0
+    logger.info("-" * 60)
+    logger.info(f"Twin resolution finished successfully")
+    logger.info(f"Output: {out_path} | Candidates processed: {len(twin_df):,} | Time: {elapsed:.1f}s")
+
+
+# ---------------------------------------------------------------------------
+# Phase 9
+# ---------------------------------------------------------------------------
+
+def run_phase9(args: argparse.Namespace) -> None:
+    t0 = time.perf_counter()
+    logger.info("=" * 60)
+    logger.info("Phase 9: Ranking Engine")
+    logger.info("=" * 60)
+
+    # Check input file requirements
+    for path_str, label in [
+        (args.candidates_parquet, "Candidates"),
+        (args.features_output, "Features"),
+        (args.honeypot_output, "Honeypots"),
+        (args.retrieval_output, "Retrieval"),
+        (args.jd_features_output, "JD Features"),
+        (args.trap_output, "Trap Features"),
+        (args.twin_output, "Twin Features"),
+    ]:
+        p = Path(path_str)
+        if not p.exists():
+            logger.error(f"{label} database Parquet not found at: {p}. Please run the respective phase first.")
+            sys.exit(1)
+
+    engine = RankingEngine()
+    
+    # 1. Compile dataset
+    df_compiled = engine.compile_dataset(
+        candidates_parquet=args.candidates_parquet,
+        features_parquet=args.features_output,
+        honeypots_parquet=args.honeypot_output,
+        retrieval_parquet=args.retrieval_output,
+        jd_features_parquet=args.jd_features_output,
+        trap_features_parquet=args.trap_output,
+        twin_features_parquet=args.twin_output,
+    )
+
+    # 2. Train if requested/needed
+    should_train = not args.rank_only
+    if should_train:
+        engine.train(df_compiled, model_output_path=args.ranking_model_path)
+    
+    # 3. Predict if requested
+    should_rank = not args.train_only
+    if should_rank:
+        ranked_df = engine.rank(df_compiled, model_path=args.ranking_model_path)
+        
+        # Select top 500
+        top_500 = ranked_df.head(500)
+        
+        out_path = Path(args.ranking_output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        top_500.to_parquet(out_path, index=False)
+        
+        elapsed = time.perf_counter() - t0
+        logger.info("-" * 60)
+        logger.info(f"Ranking finished successfully")
+        logger.info(f"Output: {out_path} | Top 500 candidates ranked | Time: {elapsed:.1f}s")
+    else:
+        elapsed = time.perf_counter() - t0
+        logger.info("-" * 60)
+        logger.info(f"Training finished successfully | Time: {elapsed:.1f}s")
+
+
+# ---------------------------------------------------------------------------
+# Phase 10
+# ---------------------------------------------------------------------------
+
+def run_phase10(args: argparse.Namespace) -> None:
+    t0 = time.perf_counter()
+    logger.info("=" * 60)
+    logger.info("Phase 10: Cross Encoder Reranker")
+    logger.info("=" * 60)
+
+    # Check input files requirements
+    for path_str, label in [
+        (args.ranking_output, "Ranking engine output (top 500)"),
+        (args.candidates_parquet, "Candidates database"),
+        (args.jd_input, "Job Description text file"),
+    ]:
+        p = Path(path_str)
+        if not p.exists():
+            logger.error(f"{label} not found at: {p}. Please run respective phase first.")
+            sys.exit(1)
+
+    reranker = CrossEncoderReranker(batch_size=args.rerank_batch_size)
+    
+    reranked_df = reranker.rerank(
+        top_n_parquet=args.ranking_output,
+        candidates_parquet=args.candidates_parquet,
+        jd_txt_path=args.jd_input,
+        cache_json_path=args.rerank_cache_path,
+        top_k=100
+    )
+
+    out_path = Path(args.rerank_output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    reranked_df.to_parquet(out_path, index=False)
+
+    elapsed = time.perf_counter() - t0
+    logger.info("-" * 60)
+    logger.info(f"Cross-Encoder reranking finished successfully")
+    logger.info(f"Output: {out_path} | Top 100 candidates ranked | Time: {elapsed:.1f}s")
+
 
 if __name__ == "__main__":
     main()
+
+
+

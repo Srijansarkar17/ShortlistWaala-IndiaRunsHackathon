@@ -6,6 +6,8 @@ Exports all public symbols from the validation (honeypot) package.
 from .checks import CheckResult, CheckName, ALL_CHECKS
 from .detector import HoneypotDetector, DetectionResult
 from .exporter import HoneypotExporter
+from .trap_detector import TrapDetector
+from .twin_resolver import TwinResolver
 
 __all__ = [
     "CheckResult",
@@ -14,4 +16,6 @@ __all__ = [
     "HoneypotDetector",
     "DetectionResult",
     "HoneypotExporter",
+    "TrapDetector",
+    "TwinResolver",
 ]
