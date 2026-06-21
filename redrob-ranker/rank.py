@@ -43,11 +43,12 @@ from src.feature_engineering import FeatureStore, JDFeatureGenerator
 from src.jd_understanding.parser import JDParser, JDProfile
 from src.retrieval.engine import HybridRetriever
 from src.ranking import RankingEngine, CrossEncoderReranker
+from src.submission import SubmissionGenerator
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="RedRob Ranker — Phases 1, 2, 3, 4, 5, 6, 7, 8, 9 & 10")
-    p.add_argument("--phase", default="all", choices=["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "all"],
+    p = argparse.ArgumentParser(description="RedRob Ranker — Phases 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 & 11")
+    p.add_argument("--phase", default="all", choices=["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "all"],
                    help="Which phase(s) to run (default: all)")
     p.add_argument("--input", default="data/candidates.jsonl",
                    help="Path to candidates.jsonl")
@@ -81,6 +82,8 @@ def parse_args() -> argparse.Namespace:
                    help="Phase 10 Cross-Encoder cache JSON path")
     p.add_argument("--rerank-batch-size", type=int, default=32,
                    help="Phase 10 Cross-Encoder inference batch size")
+    p.add_argument("--submission-output", default="submission.csv",
+                   help="Phase 11 final Submission CSV output path")
     p.add_argument("--train-only", action="store_true",
                    help="Only run ranking model training, do not output ranking predictions")
     p.add_argument("--rank-only", action="store_true",
@@ -431,6 +434,9 @@ def main() -> None:
     if args.phase in ("10", "all"):
         run_phase10(args)
 
+    if args.phase in ("11", "all"):
+        run_phase11(args)
+
 
 # ---------------------------------------------------------------------------
 # Phase 8
@@ -571,7 +577,7 @@ def run_phase10(args: argparse.Namespace) -> None:
         candidates_parquet=args.candidates_parquet,
         jd_txt_path=args.jd_input,
         cache_json_path=args.rerank_cache_path,
-        top_k=100
+        top_k=500
     )
 
     out_path = Path(args.rerank_output)
@@ -584,8 +590,59 @@ def run_phase10(args: argparse.Namespace) -> None:
     logger.info(f"Output: {out_path} | Top 100 candidates ranked | Time: {elapsed:.1f}s")
 
 
+# ---------------------------------------------------------------------------
+# Phase 11
+# ---------------------------------------------------------------------------
+
+def run_phase11(args: argparse.Namespace) -> None:
+    t0 = time.perf_counter()
+    logger.info("=" * 60)
+    logger.info("Phase 11: Submission Generator")
+    logger.info("=" * 60)
+
+    # Check input files requirements
+    for path_str, label in [
+        (args.rerank_output, "Cross-Encoder reranked output (top 100)"),
+        (args.candidates_parquet, "Candidates database"),
+        (args.features_output, "Features"),
+        (args.honeypot_output, "Honeypots"),
+        (args.retrieval_output, "Retrieval"),
+        (args.jd_features_output, "JD Features"),
+        (args.trap_output, "Trap Features"),
+        (args.twin_output, "Twin Features"),
+    ]:
+        p = Path(path_str)
+        if not p.exists():
+            logger.error(f"{label} not found at: {p}. Please run respective phase first.")
+            sys.exit(1)
+
+    # Set up generator
+    generator = SubmissionGenerator()
+    
+    # We output to args.submission_output (e.g. submission.csv)
+    out_path = Path(args.submission_output)
+
+    final_csv_path = generator.generate(
+        reranked_parquet=args.rerank_output,
+        candidates_parquet=args.candidates_parquet,
+        features_parquet=args.features_output,
+        honeypots_parquet=args.honeypot_output,
+        retrieval_parquet=args.retrieval_output,
+        jd_features_parquet=args.jd_features_output,
+        trap_features_parquet=args.trap_output,
+        twin_features_parquet=args.twin_output,
+        output_csv_path=out_path
+    )
+
+    elapsed = time.perf_counter() - t0
+    logger.info("-" * 60)
+    logger.info(f"Submission generation and validation finished successfully!")
+    logger.info(f"Final output: {final_csv_path.resolve()} | Time: {elapsed:.1f}s")
+
+
 if __name__ == "__main__":
     main()
+
 
 
 

@@ -23,6 +23,8 @@ JD_FEATURES = [
     "feat_responsibility_match_score",
     "feat_certification_match_score",
     "feat_semantic_match",
+    "feat_is_technical_role",
+    "feat_is_ai_ml_role",
 ]
 
 BEHAVIOR_FEATURES = [
@@ -103,7 +105,7 @@ class RankingEngine:
         df_twin_features = pd.read_parquet(twin_features_parquet)
 
         # Merge iteratively
-        merged_df = df_candidates[["candidate_id"]].copy()
+        merged_df = df_candidates.copy()
         
         # We perform inner/left joins on candidate_id
         for df, name in [
@@ -177,6 +179,25 @@ class RankingEngine:
                 weights["certification"] * df["feat_certification_match_score"].fillna(0.0)
             )
 
+            # Apply strict experience range penalization
+            yoe = df["years_of_experience"].fillna(0.0)
+            exp_penalty = pd.Series(0.0, index=df.index)
+            # Below min YoE (5.0)
+            under_exp_mask = yoe < 5.0
+            exp_penalty.loc[under_exp_mask] += (5.0 - yoe.loc[under_exp_mask]) * 4.0
+            # Above max YoE (9.0)
+            over_exp_mask = yoe > 9.0
+            exp_penalty.loc[over_exp_mask] += (yoe.loc[over_exp_mask] - 9.0) * 3.0
+            
+            # Apply strict non-technical role penalization and AI/ML role boost
+            role_penalty = pd.Series(0.0, index=df.index)
+            non_tech_mask = df["feat_is_technical_role"].fillna(1.0) == 0.0
+            role_penalty.loc[non_tech_mask] += 30.0
+
+            role_boost = pd.Series(0.0, index=df.index)
+            ai_ml_mask = df["feat_is_ai_ml_role"].fillna(0.0) == 1.0
+            role_boost.loc[ai_ml_mask] += 15.0
+
             behavior = weights["behavior"] * df["behavioral_strength"].fillna(0.0)
 
             trap_penalty = pd.Series(0.0, index=df.index)
@@ -184,7 +205,7 @@ class RankingEngine:
                 trap_penalty += df[trap_col].fillna(0.0) * p_val
 
             # Compute utility score
-            scores = suitability + behavior - trap_penalty
+            scores = suitability + behavior + role_boost - trap_penalty - exp_penalty - role_penalty
             
             # Penalize twins
             scores = scores * df["twin_score"].fillna(1.0)

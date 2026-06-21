@@ -111,16 +111,63 @@ class JDFeatureGenerator:
                 if yoe >= exp_min:
                     min_satisfied = 1.0
                 else:
-                    min_satisfied = yoe / exp_min
+                    min_satisfied = max(0.0, 1.0 - (exp_min - yoe) * 0.5)
                     
             if exp_max is not None and exp_max > 0:
                 if yoe <= exp_max:
                     max_satisfied = 1.0
                 else:
-                    # Soft overqualification penalty (decays by 0.1 per year over max, clamped to 0)
-                    max_satisfied = max(0.0, 1.0 - (yoe - exp_max) / 10.0)
+                    # Steeper penalty for overqualification
+                    max_satisfied = max(0.0, 1.0 - (yoe - exp_max) * 0.5)
                     
             exp_match_score = (min_satisfied + max_satisfied) / 2.0
+
+            # --- 2.5 Role Relevance Check ---
+            cand_headline = (getattr(row, "headline", "") or "").lower()
+            cand_curr_title = (getattr(row, "current_title", "") or "").lower()
+            
+            disqualified_kws = [
+                "civil", "hr", "human resources", "mechanical", "graphic designer", 
+                "accountant", "accounting", "operations", "customer support", 
+                "content writer", "marketing", "sales", "brand manager", "seo", 
+                "copywriter", "social media", "public relations", "ad operations",
+                "finance", "legal", "teacher", "professor", "doctor", "nurse",
+                "recruiter", "talent acquisition", "project manager", "devops", 
+                "qa", "quality assurance", "testing", "test engineer", "frontend", 
+                "front-end", "front end", "ui/ux", "mobile developer", "android", 
+                "ios", "scrum master", "analyst"
+            ]
+            
+            tech_kws = [
+                "software", "machine learning", "ai", "ml", "nlp", "deep learning", 
+                "computer vision", "data scientist", "data science", "data engineer", 
+                "developer", "programmer", "tech lead", "technical lead", "architect", 
+                "systems engineer", "engineering", "coder", "backend", "front-end", 
+                "frontend", "fullstack", "full-stack", "back-end"
+            ]
+            
+            is_disqualified = any(kw in cand_headline for kw in disqualified_kws) or any(kw in cand_curr_title for kw in disqualified_kws)
+            has_tech_kw = any(kw in cand_headline for kw in tech_kws) or any(kw in cand_curr_title for kw in tech_kws)
+            feat_is_technical_role = 1.0 if (has_tech_kw and not is_disqualified) else 0.0
+
+            # --- AI/ML/Data Science Specific Check ---
+            import re
+            def check_ai_ml(text: str) -> bool:
+                text_l = text.lower()
+                words = set(re.split(r'\W+', text_l))
+                # Multi-word phrases
+                phrases = ["machine learning", "deep learning", "natural language", "data scientist", "data science", "recommendation", "retrieval", "vector search"]
+                if any(phrase in text_l for phrase in phrases):
+                    return True
+                # Words
+                target_words = {"ai", "ml", "nlp", "ranking", "search"}
+                if words.intersection(target_words):
+                    return True
+                return False
+
+            is_ai_ml = check_ai_ml(cand_headline) or check_ai_ml(cand_curr_title)
+            feat_is_ai_ml_role = 1.0 if is_ai_ml else 0.0
+
             
             # --- 3. Location Match ---
             cand_loc = (getattr(row, "location", "") or "").lower()
@@ -239,6 +286,8 @@ class JDFeatureGenerator:
                 "feat_preferred_skills_match_ratio": float(pref_ratio),
                 "feat_skills_match_score": float(skill_match_score),
                 "feat_experience_match_score": float(exp_match_score),
+                "feat_is_technical_role": float(feat_is_technical_role),
+                "feat_is_ai_ml_role": float(feat_is_ai_ml_role),
                 "feat_location_match_score": float(loc_match_score),
                 "feat_domain_match_score": float(domain_match_score),
                 "feat_responsibility_match_score": float(responsibility_match_score),

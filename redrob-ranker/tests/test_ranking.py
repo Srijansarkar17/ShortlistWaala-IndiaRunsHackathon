@@ -19,6 +19,7 @@ def test_ranking_engine_pipeline(tmp_path):
         "headline": ["Software Engineer"] * 100,
         "summary": ["Detailed summary"] * 100,
         "skill_names_json": [json.dumps(["Python"])] * 100,
+        "years_of_experience": np.random.uniform(1.0, 15.0, 100),
     })
     candidates_path = tmp_path / "candidates.parquet"
     df_candidates.to_parquet(candidates_path, index=False)
@@ -74,6 +75,8 @@ def test_ranking_engine_pipeline(tmp_path):
         "feat_preferred_skills_match_ratio": np.random.uniform(0.0, 1.0, 100),
         "feat_skills_match_score": np.random.uniform(0.0, 1.0, 100),
         "feat_experience_match_score": np.random.uniform(0.0, 1.0, 100),
+        "feat_is_technical_role": [1.0] * 100,
+        "feat_is_ai_ml_role": [1.0] * 100,
         "feat_location_match_score": np.random.uniform(0.0, 1.0, 100),
         "feat_domain_match_score": np.random.uniform(0.0, 1.0, 100),
         "feat_responsibility_match_score": np.random.uniform(0.0, 1.0, 100),
