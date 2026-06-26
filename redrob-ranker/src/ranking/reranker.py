@@ -21,8 +21,14 @@ class CrossEncoderReranker:
     @property
     def model(self) -> CrossEncoder:
         if self._model is None:
-            logger.info(f"Loading CrossEncoder model '{self.model_name}' on CPU...")
-            self._model = CrossEncoder(self.model_name, device="cpu")
+            # Look for local offline model
+            local_path = Path(__file__).resolve().parents[2] / "artifacts" / "models" / "ms-marco-MiniLM-L-6-v2"
+            if local_path.exists():
+                logger.info(f"Loading local offline CrossEncoder model from {local_path} on CPU...")
+                self._model = CrossEncoder(str(local_path), device="cpu")
+            else:
+                logger.info(f"Loading CrossEncoder model '{self.model_name}' on CPU...")
+                self._model = CrossEncoder(self.model_name, device="cpu")
         return self._model
 
     def rerank(

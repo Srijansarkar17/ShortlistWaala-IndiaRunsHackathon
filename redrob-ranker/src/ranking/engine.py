@@ -267,6 +267,7 @@ class RankingEngine:
 
         # Train a pairwise LambdaRank model
         # We use a moderate learning rate and shallow trees to avoid overfitting on simulated data
+        # n_jobs=1 and num_threads=1 are critical on macOS to prevent OpenMP/MKL thread-pool deadlocks
         ranker = lgb.LGBMRanker(
             objective="lambdarank",
             metric="ndcg",
@@ -275,7 +276,10 @@ class RankingEngine:
             learning_rate=0.05,
             num_leaves=31,
             max_depth=6,
-            random_state=42
+            random_state=42,
+            n_jobs=1,
+            num_threads=1,
+            verbose=-1,
         )
 
         logger.info("Fitting LightGBM LambdaRank model...")

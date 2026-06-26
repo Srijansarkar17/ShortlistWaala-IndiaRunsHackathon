@@ -26,6 +26,14 @@ Defaults:
 
 from __future__ import annotations
 
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import argparse
 import sys
 import time
@@ -50,16 +58,16 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="RedRob Ranker — Phases 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 & 11")
     p.add_argument("--phase", default="all", choices=["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "all"],
                    help="Which phase(s) to run (default: all)")
-    p.add_argument("--input", default="data/candidates.jsonl",
-                   help="Path to candidates.jsonl")
+    p.add_argument("--input", "--candidates", default="data/candidates.jsonl",
+                   help="Path to candidates.jsonl", dest="input")
     p.add_argument("--output", default="artifacts/candidates.parquet",
                    help="Phase 1 Parquet output path")
     p.add_argument("--honeypot-output", default="artifacts/honeypots.parquet",
                    help="Phase 2 Parquet output path")
     p.add_argument("--features-output", default="artifacts/features.parquet",
                    help="Phase 3 Parquet output path")
-    p.add_argument("--jd-input", default="job_description.txt",
-                   help="Phase 4 Job Description text path")
+    p.add_argument("--jd-input", "--jd", default="job_description.txt",
+                   help="Phase 4 Job Description text path", dest="jd_input")
     p.add_argument("--jd-output", default="artifacts/jd_profile.json",
                    help="Phase 4 JSON output path")
     p.add_argument("--candidates-parquet", default="artifacts/candidates.parquet",
@@ -82,14 +90,15 @@ def parse_args() -> argparse.Namespace:
                    help="Phase 10 Cross-Encoder cache JSON path")
     p.add_argument("--rerank-batch-size", type=int, default=32,
                    help="Phase 10 Cross-Encoder inference batch size")
-    p.add_argument("--submission-output", default="submission.csv",
-                   help="Phase 11 final Submission CSV output path")
+    p.add_argument("--submission-output", "--out", default="submission.csv",
+                   help="Phase 11 final Submission CSV output path", dest="submission_output")
     p.add_argument("--train-only", action="store_true",
                    help="Only run ranking model training, do not output ranking predictions")
     p.add_argument("--rank-only", action="store_true",
                    help="Only run ranking model inference using saved model, do not retrain")
-    p.add_argument("--filter-honeypots", action="store_true",
-                   help="Filter out flagged honeypots in Phase 6")
+    p.add_argument("--no-filter-honeypots", action="store_false", dest="filter_honeypots",
+                   help="Do not filter out flagged honeypots in Phase 6")
+    p.set_defaults(filter_honeypots=True)
     p.add_argument("--embeddings-cache-dir", default="artifacts/embeddings_cache",
                    help="Directory for caching candidate dense embeddings")
     p.add_argument("--chunk-size", type=int, default=10_000,
