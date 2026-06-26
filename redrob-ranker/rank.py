@@ -29,10 +29,10 @@ from __future__ import annotations
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "8"
+os.environ["MKL_NUM_THREADS"] = "8"
+os.environ["OPENBLAS_NUM_THREADS"] = "8"
+os.environ["NUMEXPR_NUM_THREADS"] = "8"
 
 import argparse
 import sys
@@ -88,8 +88,8 @@ def parse_args() -> argparse.Namespace:
                    help="Phase 10 Reranked candidates Parquet output path")
     p.add_argument("--rerank-cache-path", default="artifacts/cross_encoder_cache.json",
                    help="Phase 10 Cross-Encoder cache JSON path")
-    p.add_argument("--rerank-batch-size", type=int, default=32,
-                   help="Phase 10 Cross-Encoder inference batch size")
+    p.add_argument("--rerank-batch-size", type=int, default=64,
+                   help="Phase 10 Cross-Encoder inference batch size (higher = faster on CPU)")
     p.add_argument("--submission-output", "--out", default="submission.csv",
                    help="Phase 11 final Submission CSV output path", dest="submission_output")
     p.add_argument("--train-only", action="store_true",
@@ -541,7 +541,7 @@ def run_phase9(args: argparse.Namespace) -> None:
     if should_rank:
         ranked_df = engine.rank(df_compiled, model_path=args.ranking_model_path)
         
-        # Select top 500
+        # Select top 500 for cross-encoder reranking
         top_500 = ranked_df.head(500)
         
         out_path = Path(args.ranking_output)

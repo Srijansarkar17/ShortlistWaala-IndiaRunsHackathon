@@ -122,19 +122,29 @@ class SubmissionGenerator:
 
         # 5. Generate reasoning justifications
         reasoner = ReasoningGenerator()
+
+        # Normalize scores to 0-100 range (min-max) so all scores are positive.
+        # Sorting is already done above so rank order is preserved.
+        raw_scores = df_compiled["score"].values
+        score_min = raw_scores.min()
+        score_max = raw_scores.max()
+        score_range = score_max - score_min if score_max != score_min else 1.0
+        normalized_scores = ((raw_scores - score_min) / score_range) * 100.0
+
         records = []
-        for idx, row in enumerate(df_compiled.itertuples()):
+        for idx, (row, norm_score) in enumerate(zip(df_compiled.itertuples(), normalized_scores)):
             rank = idx + 1
             reasoning = reasoner.generate_reasoning(row)
             
             records.append({
                 "candidate_id": row.candidate_id,
                 "rank": rank,
-                "score": float(row.score),
+                "score": round(float(norm_score), 4),
                 "reasoning": reasoning
             })
 
         df_submission = pd.DataFrame(records)
+
 
         # 6. Save as UTF-8 CSV
         out_path = Path(output_csv_path)

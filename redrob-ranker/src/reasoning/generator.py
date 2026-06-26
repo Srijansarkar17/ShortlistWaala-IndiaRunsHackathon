@@ -38,9 +38,8 @@ class ReasoningGenerator:
         else:
             skills_phrase = "required technical skills"
 
-        # Sentence 1: Profile suitability & experience fit
-        prefix = "Senior " if float(yoe) >= 5.0 else ""
-        s1 = f"{prefix}{title} with {yoe_str} years of experience, showing matching expertise in {skills_phrase}."
+        # Sentence 1: Use exact title from profile — do NOT infer seniority
+        s1 = f"{title} with {yoe_str} years of experience, demonstrating expertise in {skills_phrase}."
 
         # 3. Behavioral Signals & Gaps (Traps)
         response_rate = getattr(candidate_row, "signal_recruiter_response_rate", None)

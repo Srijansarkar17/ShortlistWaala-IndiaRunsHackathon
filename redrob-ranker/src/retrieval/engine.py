@@ -21,15 +21,10 @@ class HybridRetriever:
     @property
     def model(self) -> SentenceTransformer:
         if self._model is None:
-            # Look for local offline model
             local_path = Path(__file__).resolve().parents[2] / "artifacts" / "models" / "all-MiniLM-L6-v2"
-            if local_path.exists():
-                logger.info(f"Loading local offline dense embedding model from {local_path} on CPU")
-                self._model = SentenceTransformer(str(local_path), device="cpu")
-            else:
-                logger.info(f"Loading dense embedding model: {self.model_name} on CPU")
-                # Force CPU processing for compatibility and consistency
-                self._model = SentenceTransformer(self.model_name, device="cpu")
+            model_path = str(local_path) if local_path.exists() else self.model_name
+            logger.info(f"Loading dense embedding model from {model_path} on CPU")
+            self._model = SentenceTransformer(model_path, device="cpu")
         return self._model
 
     def retrieve(
@@ -176,7 +171,7 @@ class HybridRetriever:
             # batch size 256 for memory efficiency and throughput
             embeddings = self.model.encode(
                 texts,
-                batch_size=256,
+                batch_size=512,  # Larger batches = fewer forward passes = faster on CPU
                 show_progress_bar=True,
                 convert_to_numpy=True
             )
