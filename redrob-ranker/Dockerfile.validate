@@ -1,0 +1,95 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Redrob Hackathon v4 — Submission Validation Dockerfile
+# ─────────────────────────────────────────────────────────────────────────────
+# This Dockerfile creates a sandboxed environment that validates your
+# submission CSV against ALL requirements from the submission spec.
+#
+# It does NOT inspect your ranking code contents. It only checks:
+#   ✔ CSV format (header, row count, column types)
+#   ✔ Rank uniqueness and completeness (1-100)
+#   ✔ Score monotonicity (non-increasing)
+#   ✔ candidate_id format and existence in candidates.jsonl
+#   ✔ Reasoning quality warnings
+#   ✔ Repository structure (README, requirements, metadata)
+#   ✔ Environment constraints (memory limit, network block)
+#
+# USAGE:
+#   1. Build:
+#      docker build -t redrob-validator -f Dockerfile.validate .
+#
+#   2. Validate CSV only (quick check):
+#      docker run --rm \
+#        -v "$(pwd):/workspace" \
+#        redrob-validator \
+#        --csv /workspace/submission.csv
+#
+#   3. Validate CSV + check candidate_ids exist in dataset:
+#      docker run --rm \
+#        -v "$(pwd):/workspace" \
+#        -v "/path/to/candidates.jsonl:/workspace/candidates.jsonl:ro" \
+#        redrob-validator \
+#        --csv /workspace/submission.csv \
+#        --candidates /workspace/candidates.jsonl
+#
+#   4. Full validation (CSV + candidates + repo structure):
+#      docker run --rm \
+#        -v "$(pwd):/workspace" \
+#        -v "/path/to/candidates.jsonl:/workspace/candidates.jsonl:ro" \
+#        redrob-validator \
+#        --csv /workspace/submission.csv \
+#        --candidates /workspace/candidates.jsonl \
+#        --repo-root /workspace
+#
+#   5. Full sandbox simulation (matches Stage 3 constraints exactly):
+#      docker run --rm \
+#        --network none \
+#        --memory="16g" \
+#        -v "$(pwd):/workspace" \
+#        -v "/path/to/candidates.jsonl:/workspace/candidates.jsonl:ro" \
+#        redrob-validator \
+#        --csv /workspace/submission.csv \
+#        --candidates /workspace/candidates.jsonl \
+#        --repo-root /workspace
+#
+#   6. Run ranking code THEN validate (end-to-end sandbox test):
+#      docker run --rm \
+#        --network none \
+#        --memory="16g" \
+#        -v "$(pwd):/workspace" \
+#        -v "/path/to/candidates.jsonl:/workspace/candidates.jsonl:ro" \
+#        redrob-validator \
+#        --run-rank \
+#        --rank-cmd "python /workspace/rank.py --candidates /workspace/candidates.jsonl --out /workspace/submission.csv" \
+#        --csv /workspace/submission.csv \
+#        --candidates /workspace/candidates.jsonl \
+#        --repo-root /workspace
+# ─────────────────────────────────────────────────────────────────────────────
+
+FROM python:3.11-slim
+
+LABEL maintainer="redrob-hackathon-validator"
+LABEL description="Submission validator for Redrob Hackathon v4 — checks all spec requirements"
+
+# Set environment
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# The validator only needs Python stdlib — no pip install needed
+# Copy validation scripts
+COPY validate_submission.py /app/validate_submission.py
+COPY sandbox_runner.py /app/sandbox_runner.py
+
+# Make scripts executable
+RUN chmod +x /app/validate_submission.py /app/sandbox_runner.py
+
+# Create workspace mount point
+RUN mkdir -p /workspace
+
+# Default entrypoint: the sandbox runner
+ENTRYPOINT ["python", "/app/sandbox_runner.py"]
+
+# Default args: validate submission.csv in workspace
+CMD ["--csv", "/workspace/submission.csv", "--candidates", "/workspace/candidates.jsonl", "--repo-root", "/workspace"]

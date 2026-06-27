@@ -68,6 +68,10 @@ class HybridRetriever:
         # Using method='first' to resolve ties deterministically
         bm25_ranks = pd.Series(bm25_scores).rank(ascending=False, method="first").astype(int).tolist()
 
+        # Clean up memory before starting dense embeddings computation
+        import gc
+        gc.collect()
+
         # 3. Semantic Retrieval: Dense Embeddings
         logger.info("Computing semantic (Dense) rankings...")
         dense_scores = self._compute_dense_scores(candidates_df, query_text, embeddings_cache_dir)
@@ -147,6 +151,11 @@ class HybridRetriever:
         cache_dir: Optional[str]
     ) -> np.ndarray:
         """Compute cosine similarity dense scores, using numpy file cache if available."""
+        import gc
+        import torch
+        # Limit PyTorch threads to avoid memory overhead of thread allocation
+        torch.set_num_threads(4)
+
         texts = df["normalized_text"].fillna("").tolist()
         
         # Load or compute document embeddings
@@ -167,14 +176,23 @@ class HybridRetriever:
                     logger.warning(f"Failed to load embedding cache: {e}. Recomputing...")
                     
         if embeddings is None:
-            logger.info("Generating dense embeddings for candidates...")
-            # batch size 256 for memory efficiency and throughput
-            embeddings = self.model.encode(
-                texts,
-                batch_size=512,  # Larger batches = fewer forward passes = faster on CPU
-                show_progress_bar=True,
-                convert_to_numpy=True
-            )
+            logger.info("Generating dense embeddings for candidates in chunks...")
+            chunk_size = 20000
+            embeddings_list = []
+            for i in range(0, len(texts), chunk_size):
+                chunk = texts[i:i+chunk_size]
+                logger.info(f"Encoding chunk {i//chunk_size + 1}/{(len(texts)-1)//chunk_size + 1} ({len(chunk)} candidates)...")
+                chunk_embs = self.model.encode(
+                    chunk,
+                    batch_size=128,  # Memory friendly batch size
+                    show_progress_bar=False,
+                    convert_to_numpy=True
+                )
+                embeddings_list.append(chunk_embs)
+                del chunk
+                del chunk_embs
+                gc.collect()
+            embeddings = np.vstack(embeddings_list)
             if cache_file:
                 logger.info(f"Saving computed embeddings to cache: {cache_file}")
                 np.save(cache_file, embeddings)

@@ -1,0 +1,8 @@
+.git
+__pycache__
+*.pyc
+data/candidates.jsonl
+candidates.jsonl
+*.parquet
+embeddings_cache/
+.DS_Store
