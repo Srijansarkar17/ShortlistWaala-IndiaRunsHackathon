@@ -1,0 +1,2 @@
+*.npy filter=lfs diff=lfs merge=lfs -text
+redrob-ranker/artifacts/embeddings_cache/embeddings_cache_100000_docs.npy filter=lfs diff=lfs merge=lfs -text
