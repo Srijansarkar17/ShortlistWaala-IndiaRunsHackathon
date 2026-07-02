@@ -28,7 +28,7 @@ Ensure you are using Python 3.9+ in your environment.
 
 1. **Install dependencies**:
    ```bash
-   pip install -r redrob-ranker/requirements.txt
+   pip install -r requirements.txt
    ```
 
 2. **OpenMP warning (macOS)**:
@@ -41,27 +41,44 @@ Ensure you are using Python 3.9+ in your environment.
 
 ## How to Reproduce Submission
 
-To run the entire pipeline end-to-end and generate the final validated `submission.csv` at the repo root:
+### Local Execution
+To run the entire pipeline end-to-end and generate the final validated `submission.csv` at the repository root:
 
 ```bash
-cd redrob-ranker
-python3 rank.py --phase all
+python3 rank.py --phase all --candidates ./data/candidates.jsonl --out ./submission.csv
 ```
 
 Individual phases can also be executed:
-* `python3 rank.py --phase 6` (regenerate JD features)
 * `python3 rank.py --phase 9` (rank and train LightGBM)
 * `python3 rank.py --phase 10` (cross-encoder rerank)
 * `python3 rank.py --phase 11` (generate and validate submission)
+
+### Docker Execution (Organizers Sandbox)
+To reproduce the submission inside the sandboxed Docker container (satisfying $\le 5$ min runtime, $\le 16$ GB RAM, CPU-only, and offline constraints):
+
+1. **Build the Sandbox Image**:
+   ```bash
+   docker build -t redrob-sandbox .
+   ```
+
+2. **Run the Sandbox Container**:
+   ```bash
+   docker run --rm \
+     --network none \
+     --memory="16g" \
+     -v "$(pwd):/workspace" \
+     -w /workspace \
+     redrob-sandbox \
+     --candidates /workspace/data/candidates.jsonl \
+     --out /workspace/submission.csv
+   ```
 
 ---
 
 ## Validation
 
-To run format validation checks on the output submission using the official validator script:
+To run the comprehensive submission and repository layout validation checks:
 
 ```bash
-python3 template/validate_submission.py redrob-ranker/submission.csv
+python3 validate_submission.py --csv submission.csv --candidates data/candidates.jsonl --repo-root .
 ```
-Output:
-`Submission is valid.`

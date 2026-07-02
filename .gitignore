@@ -3,7 +3,8 @@
 *.jsonl
 *.json
 *.npy
-redrob-ranker/artifacts/embeddings_cache/
+!artifacts/embeddings_cache/
+!artifacts/embeddings_cache/embeddings_cache_100000_docs.npy
 
 
 # ── Python ───────────────────────────────────────────────────────
