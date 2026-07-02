@@ -133,6 +133,14 @@ def run_phase1(args: argparse.Namespace) -> None:
     exporter = ParquetExporter(output_path=args.output, chunk_size=args.chunk_size)
     _, rows_written = exporter.export_stream(normalized_stream())
 
+    if rows_written == 0:
+        logger.error(
+            f"No candidates were successfully parsed from '{args.input}'. "
+            "This usually means the file is empty or represents a Git LFS placeholder pointer. "
+            "Please run 'git lfs pull' to fetch the actual candidates.jsonl dataset (487.3 MB)."
+        )
+        sys.exit(1)
+
     elapsed = time.perf_counter() - t0
     logger.info("-" * 60)
     logger.info(load_result.summary())

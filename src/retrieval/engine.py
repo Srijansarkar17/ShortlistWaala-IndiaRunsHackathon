@@ -169,6 +169,13 @@ class HybridRetriever:
             cache_file = cache_path / f"embeddings_cache_{len(df)}_docs.npy"
             
             if cache_file.exists():
+                if cache_file.stat().st_size < 1024:
+                    import sys
+                    logger.error(
+                        f"The embeddings cache file '{cache_file}' is a Git LFS placeholder pointer (size < 1 KB). "
+                        "Please run 'git lfs pull' to download the actual precomputed embeddings cache file (153.6 MB) before running the pipeline."
+                    )
+                    sys.exit(1)
                 logger.info(f"Loading document embeddings from cache: {cache_file}")
                 try:
                     embeddings = np.load(cache_file)

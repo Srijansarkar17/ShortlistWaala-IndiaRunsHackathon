@@ -26,12 +26,19 @@ We implement a robust multi-stage candidate discoverer and ranker:
 
 Ensure you are using Python 3.9+ in your environment.
 
-1. **Install dependencies**:
+1. **Git LFS (Large File Storage)**:
+   This repository tracks the candidates dataset (`data/candidates.jsonl`) and precomputed embeddings cache (`artifacts/embeddings_cache/...`) via Git LFS. After cloning, you **must** download the actual files:
+   ```bash
+   git lfs install
+   git lfs pull
+   ```
+
+2. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-2. **OpenMP warning (macOS)**:
+3. **OpenMP warning (macOS)**:
    The pipeline executes CPU-optimized LightGBM. On macOS, make sure OpenMP is installed if you encounter library loading warnings:
    ```bash
    brew install libomp
