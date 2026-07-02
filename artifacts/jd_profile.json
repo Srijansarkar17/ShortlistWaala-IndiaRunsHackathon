@@ -1,0 +1,32 @@
+{
+  "required_skills": [
+    "Computer Vision",
+    "Elasticsearch",
+    "Embeddings",
+    "FAISS",
+    "LLMs",
+    "LangChain",
+    "LoRA",
+    "Milvus",
+    "NLP",
+    "OpenSearch",
+    "PEFT",
+    "Pinecone",
+    "Python",
+    "QLoRA",
+    "Qdrant",
+    "RAG",
+    "Weaviate"
+  ],
+  "preferred_skills": [],
+  "experience_range": {
+    "min_years": 5.0,
+    "max_years": 9.0
+  },
+  "location_requirements": [
+    "Hybrid",
+    "India"
+  ],
+  "industry_requirements": [],
+  "soft_skills": []
+}

@@ -2,6 +2,8 @@
 *.parquet
 *.jsonl
 *.json
+!artifacts/**/*.json
+!artifacts/**/**/*.json
 *.npy
 !artifacts/embeddings_cache/
 !artifacts/embeddings_cache/embeddings_cache_100000_docs.npy
